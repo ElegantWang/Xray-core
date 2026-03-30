@@ -74,6 +74,20 @@ jobs:
           unzip -o ./wintun.zip -d resources/
           rm -f ./wintun.zip
 
+      - name: Save Geodat Cache
+        if: steps.check-assets.outputs.missing == 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: resources
+          key: xray-geodat-${{ github.sha }}-${{ github.run_number }}
+
+      - name: Save Wintun Cache
+        if: steps.check-assets.outputs.missing == 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: resources
+          key: xray-wintun-${{ github.sha }}-${{ github.run_number }}
+
   build:
     needs: check-assets
     permissions:
@@ -293,53 +307,56 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    container: ubuntu:18.04
-    defaults:
-      run:
-        shell: bash
     env:
       GOOS: linux
       GOARCH: amd64
       CGO_ENABLED: 0
       ASSET_NAME: linux-64-ubuntu18
     steps:
-      - name: Install build dependencies
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            bash \
-            ca-certificates \
-            curl \
-            git \
-            jq \
-            openssl \
-            unzip \
-            zip
-
       - name: Checkout codebase
         uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          check-latest: true
-
-      - name: Get project dependencies
-        run: go mod download
-
-      - name: Build Xray for Ubuntu 18
-        run: |
-          mkdir -p build_assets
-          COMMID=$(git describe --always --dirty)
-          go build -o build_assets/xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
 
       - name: Restore Geodat Cache
         uses: actions/cache/restore@v5
         with:
           path: resources
           key: xray-geodat-
+
+      - name: Build Xray for Ubuntu 18
+        run: |
+          docker run --rm \
+            -e GOOS="${GOOS}" \
+            -e GOARCH="${GOARCH}" \
+            -e CGO_ENABLED="${CGO_ENABLED}" \
+            -e GITHUB_WORKSPACE=/work \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            ubuntu:18.04 \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              GO_VERSION=$(awk "/^go / {print \$2}" go.mod)
+              case "${GO_VERSION}" in
+                *.*.*) GO_TARBALL_VERSION="${GO_VERSION}" ;;
+                *.*) GO_TARBALL_VERSION="${GO_VERSION}.0" ;;
+                *) echo "Unsupported Go version format: ${GO_VERSION}" >&2; exit 1 ;;
+              esac
+
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                ca-certificates \
+                curl \
+                git
+
+              curl -fsSL "https://go.dev/dl/go${GO_TARBALL_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              export PATH=/usr/local/go/bin:$PATH
+
+              go mod download
+              mkdir -p build_assets
+              COMMID=$(git describe --always --dirty)
+              go build -o build_assets/xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
+            '
 
       - name: Add additional assets into package
         run: mv -f resources/geo* build_assets/
