@@ -348,6 +348,7 @@ jobs:
                 curl \
                 git
 
+              git config --global --add safe.directory /work
               curl -fsSL "https://go.dev/dl/go${GO_TARBALL_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
               tar -C /usr/local -xzf /tmp/go.tar.gz
               export PATH=/usr/local/go/bin:$PATH
