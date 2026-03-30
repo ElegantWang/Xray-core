@@ -328,6 +328,8 @@ jobs:
             -e GOOS="${GOOS}" \
             -e GOARCH="${GOARCH}" \
             -e CGO_ENABLED="${CGO_ENABLED}" \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
             -e GITHUB_WORKSPACE=/work \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
@@ -357,6 +359,7 @@ jobs:
               mkdir -p build_assets
               COMMID=$(git describe --always --dirty)
               go build -o build_assets/xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
+              chown -R "${HOST_UID}:${HOST_GID}" build_assets
             '
 
       - name: Add additional assets into package
