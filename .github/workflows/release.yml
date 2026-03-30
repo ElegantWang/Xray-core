@@ -285,3 +285,94 @@ jobs:
           name: Xray-${{ env.ASSET_NAME }}
           path: |
             ./build_assets/*
+
+  build-ubuntu18:
+    needs: check-assets
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    container: ubuntu:18.04
+    defaults:
+      run:
+        shell: bash
+    env:
+      GOOS: linux
+      GOARCH: amd64
+      CGO_ENABLED: 0
+      ASSET_NAME: linux-64-ubuntu18
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            bash \
+            ca-certificates \
+            curl \
+            git \
+            jq \
+            openssl \
+            unzip \
+            zip
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Get project dependencies
+        run: go mod download
+
+      - name: Build Xray for Ubuntu 18
+        run: |
+          mkdir -p build_assets
+          COMMID=$(git describe --always --dirty)
+          go build -o build_assets/xray -trimpath -buildvcs=false -gcflags="all=-l=4" -ldflags="-X github.com/xtls/xray-core/core.build=${COMMID} -s -w -buildid=" -v ./main
+
+      - name: Restore Geodat Cache
+        uses: actions/cache/restore@v5
+        with:
+          path: resources
+          key: xray-geodat-
+
+      - name: Add additional assets into package
+        run: mv -f resources/geo* build_assets/
+
+      - name: Copy README.md & LICENSE
+        run: |
+          cp ${GITHUB_WORKSPACE}/README.md ./build_assets/README.md
+          cp ${GITHUB_WORKSPACE}/LICENSE ./build_assets/LICENSE
+
+      - name: Create ZIP archive
+        if: github.event_name == 'release'
+        run: |
+          pushd build_assets || exit 1
+          touch -mt $(date +%Y01010000) *
+          zip -9vr ../Xray-${ASSET_NAME}.zip .
+          popd || exit 1
+          FILE=./Xray-${ASSET_NAME}.zip
+          DGST=$FILE.dgst
+          for METHOD in {"md5","sha1","sha256","sha512"}
+          do
+            openssl dgst -$METHOD $FILE | sed 's/([^)]*)//g' >>$DGST
+          done
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        if: github.event_name == 'release'
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./Xray-${{ env.ASSET_NAME }}.zip*
+          tag: ${{ github.ref }}
+          file_glob: true
+
+      - name: Upload files to Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Xray-${{ env.ASSET_NAME }}
+          path: |
+            ./build_assets/*
