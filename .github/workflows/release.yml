@@ -303,9 +303,6 @@ jobs:
       CGO_ENABLED: 0
       ASSET_NAME: linux-64-ubuntu18
     steps:
-      - name: Checkout codebase
-        uses: actions/checkout@v6
-
       - name: Install build dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
@@ -319,6 +316,9 @@ jobs:
             openssl \
             unzip \
             zip
+
+      - name: Checkout codebase
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
