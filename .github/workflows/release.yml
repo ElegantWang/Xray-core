@@ -53,24 +53,26 @@ jobs:
             fi
           done
 
-      - name: Trigger Asset Update Workflow if Assets Missing
+      - name: Download Missing Assets
         if: steps.check-assets.outputs.missing == 'true'
-        uses: actions/github-script@v8
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            await github.rest.actions.createWorkflowDispatch({
-              owner,
-              repo,
-              workflow_id: 'scheduled-assets-update.yml',
-              ref: context.ref
-            });
-            console.log('Triggered scheduled-assets-update.yml due to missing assets on branch:', context.ref);
+        run: |
+          set -euo pipefail
+          [ -d 'resources' ] || mkdir -p resources
 
-      - name: Sleep for 90 seconds if Assets Missing
-        if: steps.check-assets.outputs.missing == 'true'
-        run: sleep 90
+          LIST=('Loyalsoldier v2ray-rules-dat geoip geoip' 'Loyalsoldier v2ray-rules-dat geosite geosite')
+          for i in "${LIST[@]}"
+          do
+            INFO=($(echo "$i" | awk 'BEGIN{FS=" ";OFS=" "} {print $1,$2,$3,$4}'))
+            FILE_NAME="${INFO[3]}.dat"
+            HASH="$(curl -fsSL "https://raw.githubusercontent.com/${INFO[0]}/${INFO[1]}/release/${INFO[2]}.dat.sha256sum" | awk -F ' ' '{print $1}')"
+            curl -fsSL "https://raw.githubusercontent.com/${INFO[0]}/${INFO[1]}/release/${INFO[2]}.dat" -o "./resources/${FILE_NAME}"
+            [ "$(sha256sum "./resources/${FILE_NAME}" | awk -F ' ' '{print $1}')" = "${HASH}" ] || { echo "The HASH key of ${FILE_NAME} does not match cloud one."; exit 1; }
+          done
+
+          WINTUN_FILE=wintun-0.14.1.zip
+          curl -fsSL "https://www.wintun.net/builds/${WINTUN_FILE}" -o ./wintun.zip
+          unzip -o ./wintun.zip -d resources/
+          rm -f ./wintun.zip
 
   build:
     needs: check-assets
